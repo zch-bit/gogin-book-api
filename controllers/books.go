@@ -2,37 +2,53 @@ package controllers
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
+	"goginproj/Infra"
+	"goginproj/dtos"
 	"goginproj/models"
+	"goginproj/services"
 )
 
-// FindBooks find all books from DB
-// GET /books
-func FindBooks(c *gin.Context) {
-	var books []models.Book
-	models.DB.Find(&books)
-	c.JSON(http.StatusOK, gin.H{"data": books})
+func RegisterBookRoutes(route *gin.RouterGroup) {
+	route.GET("/", FindBooks)
+	route.POST("/", CreateBook)
+	route.PATCH("/", UpdateBook)
+	route.GET("/:id", FindBook)
 }
 
-// FindBook finds a book and return
-// GET /book/:id
+func FindBooks(c *gin.Context) {
+	pageSizeStr := c.Query("page_size")
+	pageStr := c.Query("page")
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil {
+		pageSize = 10
+	}
+	page, err := strconv.Atoi(pageStr)
+	if err != nil {
+		page = 1
+	}
+	log.Debugf("Query page size %v with page %v", pageSize, page)
+	books, count := services.GetAllBooks(page, pageSize)
+	c.JSON(http.StatusOK, dtos.CreatedBookPagedResponse(books, page, pageSize, count))
+}
+
 func FindBook(c *gin.Context) {
 	var book models.Book
 
-	if err := models.DB.Where("id = ?", c.Param("id")).First(&book).Error; err != nil {
+	if err := Infra.GetDB().Where("id = ?", c.Param("id")).First(&book).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Record not found"})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": book})
 }
 
-// UpdateBook updates a book record with
-// PATCH /update/:id
 func UpdateBook(c *gin.Context) {
 	var book models.Book
-	if err := models.DB.Where("id = ?", c.Param("id")).First(&book).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "record not found"})
+	if err := middlewares.DB.Where("id = ?", c.Param("id")).First(&book).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrNotFound.Message})
 		return
 	}
 
@@ -42,15 +58,13 @@ func UpdateBook(c *gin.Context) {
 		return
 	}
 
-	models.DB.Model(&book).Update(input)
+	middlewares.DB.Model(&book).Update(input)
 
 	c.JSON(http.StatusOK, gin.H{"data": book})
 
 }
 
-// CreatBook creates a book
-// PUT /create
-func CreatBook(c *gin.Context) {
+func CreateBook(c *gin.Context) {
 	var input models.CreateBookInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -60,7 +74,7 @@ func CreatBook(c *gin.Context) {
 		Title:  input.Title,
 		Author: input.Author,
 	}
-	models.DB.Create(&book)
+	middlewares.DB.Create(&book)
 
 	c.JSON(http.StatusOK, gin.H{"data": book})
 }

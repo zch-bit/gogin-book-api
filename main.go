@@ -1,29 +1,35 @@
 package main
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+	"github.com/jinzhu/gorm"
 	log "github.com/sirupsen/logrus"
+	"goginproj/Infra"
 	"goginproj/controllers"
 	"goginproj/models"
 )
 
+type Server struct {
+	store  *gorm.DB
+	router *gin.Engine
+}
+
+func NewServer(store *gorm.DB) *Server {
+	goGonicEngine := gin.Default()
+	apiRouteGroup := goGonicEngine.Group("/api")
+	controllers.RegisterBookRoutes(apiRouteGroup.Group("books"))
+	return &Server{
+		store:  store,
+		router: goGonicEngine,
+	}
+}
+
 func main() {
-	r := gin.Default()
-	log.Info("starting ...")
+	log.Info("Starting...")
+	database := Infra.ConnectDatabase()
+	defer database.Close()
+	database.AutoMigrate(&models.Book{})
 
-	models.ConnectDB()
-	r.GET("/book", controllers.FindBooks)
-	r.GET("/book/:id", controllers.FindBook)
-	r.PATCH("/book/:id", controllers.UpdateBook)
-
-	r.POST("/create", controllers.CreatBook)
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"pong": 200,
-		})
-	})
-
-	r.Run(":3000")
+	apiServer := NewServer(database)
+	apiServer.router.Run(":3000")
 }
